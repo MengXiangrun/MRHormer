@@ -162,7 +162,7 @@ class GlobalAttention(torch.nn.Module):
         return node_emb_dict
 
 
-class MRNormer(torch.nn.Module):
+class MRHormer(torch.nn.Module):
     def __init__(self,
                  in_dim,
                  hidden_dim,
