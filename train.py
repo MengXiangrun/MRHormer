@@ -26,9 +26,9 @@ for seed in [0]:
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
-    # for dataset_name in ['HeNetRW_isolated','TCMSP_nonisolated', 'HIT_nonisolated', 'HIT_isolated', 'TCMSP_isolated']:
 
-    for dataset_name in ['HeNetRW_isolated','TCMSP_nonisolated','HIT_nonisolated']:
+
+    for dataset_name in ['HeNetRW','TCMSP','HIT']:
         # data
         dataset = TCMDataset(dataset=dataset_name)
         print(dataset_name)
