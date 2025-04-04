@@ -376,7 +376,7 @@ class LightGCN(torch.nn.Module):
 
 # Metapath-based Heterogeneous GNN Baselines
 
-# HAN[WWW 2019] # 太旧了可以不用，主要去衡量下面两个最新的模型
+# HAN[WWW 2019] 
 # Heterogeneous Graph Attention Network
 class HAN(torch.nn.Module):
     def __init__(self, in_dim, hidden_dim, out_dim, node_type_list, edge_type_list,
@@ -443,7 +443,7 @@ class HAN(torch.nn.Module):
 # from openhgnn.models import SeHGNN
 
 
-# Paths2Pair[KDD 2024]  # 新论文，pyg/dgl/openhgnn等框架没有收录模型，需自己复现
+# Paths2Pair[KDD 2024] 
 # Paths2Pair: Meta-path Based Link Prediction in Billion-Scale Commercial Heterogeneous Graphs
 # https://dl.acm.org/doi/10.1145/3637528.3671563
 # https://github.com/JQHang/Paths2Pair
@@ -453,7 +453,7 @@ class HAN(torch.nn.Module):
 
 # Metapath-free Heterogeneous GNN Baselines
 
-# HGT(WWW 2019) # 虽然旧但还是得做，因为东南大学HGAN-HTI相当于用的HGT，也可以调用openhgnn内的实现
+# HGT(WWW 2019) 
 # Heterogeneous Graph Transformer
 # https://arxiv.org/abs/2003.01332
 # from openhgnn.models import HGT
@@ -467,7 +467,7 @@ class HAN(torch.nn.Module):
 
 # Relation-based Heterogeneous GNN Baselines
 
-# RGCN[ESWC 2018] # 太旧了可以不用
+# RGCN[ESWC 2018]
 # Modeling Relational Data with Graph Convolutional Networks
 # https://arxiv.org/abs/1703.06103
 # from openhgnn.models import RGCN
@@ -485,24 +485,20 @@ class HAN(torch.nn.Module):
 
 ########################################################################################################################
 
-# Graph Inductive Link Prediction Baseline Models # 下面两个模型不算特别难做，因为本质上都是在堆Linear和MLP
+# Graph Inductive Link Prediction Baseline Models 
 
-# DEAL [IJCAI2020] # 模型需自己整理复现，下面只是参考，请参阅实际的作者代码
+# DEAL [IJCAI2020] 
 # Inductive Link Prediction for Nodes Having Only Attribute Information
 # https://arxiv.org/abs/2007.08053
 # https://github.com/working-yuhao/DEAL
 
 
-# Graph2Feat[WWW 2023]  # 模型需自己整理复现
+# Graph2Feat[WWW 2023] 
 # Graph2Feat: Inductive Link Prediction via Knowledge Distillation
 # https://dl.acm.org/doi/pdf/10.1145/3543873.3587596
 # https://github.com/AhmedESamy/Graph2Feat
 
 ########################################################################################################################
-
-# gnn模型输出shape为（节点数量，节点嵌入向量维度大小）的node embedding tensor
-# 下一步输入到decoder计算source node - target node 这条边的预测概率
-# 当然不是一条边一条边输入，是当前关系的所有边一起输入
 class EdgeDecoder(torch.nn.Module):
     def __init__(self, in_dim, hidden_dim, out_dim, edge_type_list):
         super().__init__()
