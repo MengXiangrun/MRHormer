@@ -38,8 +38,8 @@ for seed in [0]:
             train_data, val_data, test_data = train_val_test
 
             # model
-            model_name = 'MRNormer'
-            from MRNormer import MRNormer
+            model_name = 'MRHormer'
+            from MRHormer import MRHormer
 
             worktype = ''  # HyPara,Ablation
             if 'HeNetRW' in dataset_name:
@@ -58,7 +58,7 @@ for seed in [0]:
                 hidden_dim = 16
                 lr = 0.00005
 
-            encoder = MRNormer(in_dim=-1,
+            encoder = MRHormer(in_dim=-1,
                                hidden_dim=hidden_dim,
                                out_dim=64,
                                node_type_list=train_data.node_feature_dict.keys(),
