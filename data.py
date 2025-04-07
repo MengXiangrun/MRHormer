@@ -11,12 +11,15 @@ import matplotlib.pyplot as plt
 
 class HeterogeneousGraphData():
     def __init__(self):
+        super().__init__()
         self.node_feature_dict = None
         self.message_edge_dict = None
         self.predict_edge_dict = None
         self.unseen_node_type = None
+        self.index2node_dict = None
+        self.node2index_dict = None
 
-    def to_device(self, device):
+    def to(self, device):
         for k, v in self.node_feature_dict.items():
             self.node_feature_dict[k] = v.to(device)
         for k, v in self.message_edge_dict.items():
@@ -24,9 +27,8 @@ class HeterogeneousGraphData():
         for k, v in self.predict_edge_dict.items():
             self.predict_edge_dict[k] = v.to(device)
 
-
 class TCMDataset():
-    def __init__(self, dataset: str = 'HeNetRW_isolated'):
+    def __init__(self, dataset: str = 'HeNetRW'):
         super().__init__()
         self.metapath_dict = dict()
         self.dataset = dataset
@@ -39,30 +41,17 @@ class TCMDataset():
             self.data_list = self.read(dir=dir)
             self.save(data_list=self.data_list, file_path=save_path)
 
-        if 'HeNetRW' in dataset:
-            self.metapath_dict['herb'] = [[('herb', 'target'), ('target', 'herb')]]
-            self.metapath_dict['target'] = [[('target', 'herb'), ('herb', 'target')]]
-
-        if 'HIT' in dataset:
-            self.metapath_dict['herb'] = [[('herb', 'target'), ('target', 'herb')],
-                                          [('herb', 'compound'), ('compound', 'herb')]]
-            self.metapath_dict['target'] = [[('target', 'herb'), ('herb', 'target')],
-                                            [('target', 'compound'), ('compound', 'target')]]
-
-        if 'TCMSP' in dataset:
-            self.metapath_dict['herb'] = [[('herb', 'target'), ('target', 'herb')],
-                                          [('herb', 'molecule'), ('molecule', 'herb')]]
-            self.metapath_dict['target'] = [[('target', 'herb'), ('herb', 'target')],
-                                            [('target', 'molecule'), ('molecule', 'target')],
-                                            [('target', 'disease'), ('disease', 'target')]]
         print('Done')
 
-    def read(self, dir):
+    def zip(self, dir):
         for zip in os.listdir(dir):
             if zip.endswith(".zip"):
                 zipfile_path = os.path.join(dir, zip)
                 with zipfile.ZipFile(zipfile_path, 'r') as zip_ref:
                     zip_ref.extractall(dir)
+
+    def read(self, dir):
+        self.zip(dir=dir)
 
         data_list = []
         for fold in os.listdir(dir):
@@ -77,9 +66,9 @@ class TCMDataset():
 
             train_val_test = []
             for tvt in ['train', 'val', 'test']:
-                feature_dict = {}
-                message_dict = {}
-                predict_dict = {}
+                node_feature_dict = {}
+                message_edge_dict = {}
+                predict_edge_dict = {}
 
                 # node feature
                 tvt_path = os.path.join(dir, fold, tvt)
@@ -87,49 +76,45 @@ class TCMDataset():
                     if not file.lower().endswith(('.csv', '.xlsx', '.xls')): continue
                     if 'feature' in file:
                         file_path = os.path.join(dir, fold, tvt, file)
-                        feature = self.read_excel_csv(file_name=file, file_path=file_path)
-                        node_type = feature.columns[0]
-                        feature_dict[node_type] = feature
+                        node_feature = self.excel(file_name=file, file_path=file_path)
+                        node_type = node_feature.columns[0]
+                        node_feature_dict[node_type] = node_feature
                     if 'message' in file:
                         file_path = os.path.join(dir, fold, tvt, file)
-                        message = self.read_excel_csv(file_name=file, file_path=file_path)
-                        edge_type = tuple(message.columns)
+                        message_edge = self.excel(file_name=file, file_path=file_path)
+                        edge_type = tuple(message_edge.columns)
                         assert len(edge_type) == 2
-                        message_dict[edge_type] = message
+                        message_edge_dict[edge_type] = message_edge
                     if 'predict' in file:
                         file_path = os.path.join(dir, fold, tvt, file)
-                        predict = self.read_excel_csv(file_name=file, file_path=file_path)
-                        edge_type = tuple(predict.columns)
+                        predict_edge = self.excel(file_name=file, file_path=file_path)
+                        edge_type = tuple(predict_edge.columns)
                         assert len(edge_type) == 2
-                        predict_dict[edge_type] = predict
-
-                # node feature
-                node_feature_dict = dict()
-                for node_type, feature in feature_dict.items():
-                    node_feature_dict[node_type] = feature[feature.columns[1:]].values.astype(float)
+                        predict_edge_dict[edge_type] = predict_edge
 
                 # node index
-                node_index_dict = dict()
-                for node_type, feature in feature_dict.items():
-                    node_index_dict[node_type] = pd.Series(feature.index, index=feature[node_type])
-
-                for node_type, series in node_index_dict.items():
-                    node_index_dict[node_type] = series.to_dict()
+                node2index_dict = dict()
+                index2node_dict = dict()
+                for node_type, node_feature in node_feature_dict.items():
+                    index2node_dict[node_type] = node_feature[node_type].to_dict()
+                    node2index_dict[node_type] = pd.Series(data=node_feature.index,
+                                                           index=node_feature[node_type].values).to_dict()
+                # node feature
+                for node_type, node_feature in node_feature_dict.items():
+                    node_feature_dict[node_type] = node_feature[node_feature.columns[1:]].values.astype(float)
 
                 # message edge
-                message_edge_dict = dict()
-                for edge_type, message in message_dict.items():
+                for edge_type, message_edge in message_edge_dict.items():
                     message_edge_dict = self.get_edge(edge_dict=message_edge_dict,
-                                                      edge_dataframe=message,
-                                                      node_index_dict=node_index_dict)
+                                                      edge_dataframe=message_edge,
+                                                      node2index_dict=node2index_dict)
                 message_edge_dict = self.add_reverse(edge_dict=message_edge_dict)
 
                 # predict edge
-                predict_edge_dict = dict()
-                for edge_type, predict in predict_dict.items():
+                for edge_type, predict_edge in predict_edge_dict.items():
                     predict_edge_dict = self.get_edge(edge_dict=predict_edge_dict,
-                                                      edge_dataframe=predict,
-                                                      node_index_dict=node_index_dict)
+                                                      edge_dataframe=predict_edge,
+                                                      node2index_dict=node2index_dict)
                 predict_edge_dict = self.add_reverse(edge_dict=predict_edge_dict)
 
                 # hetero graph
@@ -143,7 +128,8 @@ class TCMDataset():
                 hetero_graph.message_edge_dict = message_edge_dict
                 hetero_graph.predict_edge_dict = predict_edge_dict
                 hetero_graph.unseen_node_type = unseen_node_type
-
+                hetero_graph.node2index_dict = node2index_dict
+                hetero_graph.index2node_dict = index2node_dict
                 train_val_test.append(hetero_graph)
 
             data_list.append(train_val_test)
@@ -151,7 +137,7 @@ class TCMDataset():
         print('data.py Done!')
         return data_list
 
-    def read_excel_csv(self, file_name, file_path):
+    def excel(self, file_name, file_path):
         print(f'Reading... {file_path}')
         if file_name.endswith('.csv'):
             try:
@@ -188,22 +174,16 @@ class TCMDataset():
 
         return out_dict
 
-    def get_edge(self, edge_dict, edge_dataframe, node_index_dict):
+    def get_edge(self, edge_dict, edge_dataframe, node2index_dict):
         edge_type = tuple(edge_dataframe.columns)
-        edge_index = edge_dataframe.copy()
+        edge = edge_dataframe.copy()
 
-        for node_type in edge_index.columns:
-            edge_index[node_type] = edge_index[node_type].map(node_index_dict[node_type])
+        for node_type in edge.columns:
+            edge[node_type] = edge[node_type].map(node2index_dict[node_type])
+            is_all_int = np.issubdtype(edge[node_type].values.dtype, np.integer)
+            assert is_all_int
 
-        def is_number(x):
-            return isinstance(x, (int, float))
-
-        def check_numeric_map(df):
-            return df.apply(lambda col: col.map(is_number).all()).all()
-
-        assert check_numeric_map(df=edge_index)
-
-        edge_dict[edge_type] = edge_index.values.astype(int).T
+        edge_dict[edge_type] = edge.values.astype(int).T
 
         return edge_dict
 
@@ -396,14 +376,14 @@ class TCMDataset():
                     print('read file path:', file_path)
 
                     if 'feature' in file:
-                        feature = self.read_excel_csv(file_name=file, file_path=file_path)
+                        feature = self.excel(file_name=file, file_path=file_path)
                         assert len(feature)
                         print('read ok')
                         node_type = feature.columns[0]
                         feature_dict[node_type] = feature
 
                     if 'message' in file:
-                        message = self.read_excel_csv(file_name=file, file_path=file_path)
+                        message = self.excel(file_name=file, file_path=file_path)
                         assert len(message)
                         print('read ok')
                         edge_type = tuple(message.columns)
@@ -411,7 +391,7 @@ class TCMDataset():
                         message_dict[edge_type] = message
 
                     if 'predict' in file:
-                        predict = self.read_excel_csv(file_name=file, file_path=file_path)
+                        predict = self.excel(file_name=file, file_path=file_path)
                         assert len(predict)
                         print('read ok')
                         edge_type = tuple(predict.columns)
@@ -439,9 +419,27 @@ class TCMDataset():
 
             # for i in ['HeNetRW_isolated', 'HIT_isolated', 'HIT_nonisolated', 'TCMSP_isolated', 'TCMSP_nonisolated']:
 
+    def get_metapath(self):
+        if 'HeNetRW' in self.dataset:
+            self.metapath_dict['herb'] = [[('herb', 'target'), ('target', 'herb')]]
+            self.metapath_dict['target'] = [[('target', 'herb'), ('herb', 'target')]]
 
-# for i in ['HeNetRW_isolated', 'HIT_isolated', 'HIT_nonisolated', 'TCMSP_isolated', 'TCMSP_nonisolated']:
-#     data = TCMDataset(dataset=i)
-#     print(data.data_list)
-#     data.check()
+        if 'HIT' in self.dataset:
+            self.metapath_dict['herb'] = [[('herb', 'target'), ('target', 'herb')],
+                                          [('herb', 'compound'), ('compound', 'herb')]]
+            self.metapath_dict['target'] = [[('target', 'herb'), ('herb', 'target')],
+                                            [('target', 'compound'), ('compound', 'target')]]
+
+        if 'TCMSP' in self.dataset:
+            self.metapath_dict['herb'] = [[('herb', 'target'), ('target', 'herb')],
+                                          [('herb', 'molecule'), ('molecule', 'herb')]]
+            self.metapath_dict['target'] = [[('target', 'herb'), ('herb', 'target')],
+                                            [('target', 'molecule'), ('molecule', 'target')],
+                                            [('target', 'disease'), ('disease', 'target')]]
+
+        return self.metapath_dict
+
+# device = torch.device("cuda")
+# for i in ['HeNetRW', 'HIT', 'TCMSP']:
+#     tcm = TCMDataset(dataset=i)
 #     print()
