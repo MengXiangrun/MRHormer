@@ -6,6 +6,7 @@ import torch.nn.functional as F
 import math
 import torch
 
+
 class Linear(torch.nn.Module):
     def __init__(self, out_dim, bias=True):
         super().__init__()
@@ -21,7 +22,6 @@ class Linear(torch.nn.Module):
         return self.linear(x)
 
 
-
 def create_metapath_edge_index(node_emb_dict, edge_dict, metapath_dict):
     metapath_edge_dict = {}
 
@@ -33,6 +33,7 @@ def create_metapath_edge_index(node_emb_dict, edge_dict, metapath_dict):
             target_type = edge_type[-1]
             num_source_node = node_emb_dict[source_type].shape[0]
             num_target_node = node_emb_dict[target_type].shape[0]
+
             sparse_size = (num_source_node, num_target_node)
             adj1 = PyG.typing.SparseTensor.from_edge_index(edge_index=edge_dict[edge_type],
                                                            sparse_sizes=sparse_size)
@@ -44,8 +45,8 @@ def create_metapath_edge_index(node_emb_dict, edge_dict, metapath_dict):
                 sparse_size = (num_source_node, num_target_node)
                 adj2 = PyG.typing.SparseTensor.from_edge_index(edge_index=edge_dict[edge_type],
                                                                sparse_sizes=sparse_size)
+                adj1 = adj1 @ adj2
 
-            adj1 = adj1 @ adj2
             source_index, target_index, edge_weight = adj1.coo()
             metapath_type = (metapath[0][0], f'{node_type}_metapath_{metapath_index}', metapath[-1][-1])
             metapath_edge_dict[metapath_type] = torch.vstack([source_index, target_index])
@@ -77,8 +78,6 @@ class SeHGNN_Transformer(nn.Module):
             self.act = lambda x: x
         else:
             assert 0, f'Unrecognized activation function {act} for class Transformer'
-
-        self.reset_parameters()
 
     def forward(self, x, mask=None):
         # batchsize(num_node), num_metapaths, channels
@@ -195,29 +194,32 @@ class SeHGNN(nn.Module):
         self.dropout = nn.Dropout(self.dropout)
         self.in_dropout = nn.Dropout(self.in_dropout)
 
-    def forward(self, node_emb_dict, edge_dict, metapath_dict):
-        metapath_node_emb_dict = self.preprocess(node_emb_dict, edge_dict, metapath_dict)
+    def forward(self, node_emb_dict, edge_dict):
+        metapath_node_emb_dict = self.preprocess(node_emb_dict, edge_dict, self.metapath_dict)
 
+        z_dict = {}
         for node_type, node_emb in metapath_node_emb_dict.items():
-            num_metapath, num_node, node_dim = node_emb.reshape
+            num_metapath, num_node, node_dim = node_emb.shape
             node_emb = node_emb.transpose(0, 1)
-            num_node, num_metapath, node_dim = node_emb.reshape
+            num_node, num_metapath, node_dim = node_emb.shape
 
             node_emb = self.in_dropout(node_emb)
             node_emb = self.feat_project_layers[node_type](node_emb)
             node_emb = self.semantic_aggr_layers[node_type](node_emb)
 
-            node_emb = node_emb.contiguous().reshape(num_metapath * num_node, node_dim)
+            node_emb = node_emb.contiguous().reshape(num_metapath * num_node, -1)
             node_emb = self.concat_project_layer[node_type](node_emb)
 
-        return node_emb
+            z_dict[node_type] = node_emb
+
+        return z_dict
 
     def preprocess(self, node_emb_dict, edge_dict, metapath_dict):
         metapath_edge_dict = create_metapath_edge_index(node_emb_dict=node_emb_dict,
                                                         edge_dict=edge_dict,
                                                         metapath_dict=metapath_dict)
         metapath_node_emb_dict = dict()
-        for edge_type, edge in metapath_edge_dict:
+        for edge_type, edge in metapath_edge_dict.items():
             source_type, metapath_type, target_type = edge_type
 
             source_index = edge[0]
@@ -225,6 +227,8 @@ class SeHGNN(nn.Module):
 
             source_emb = node_emb_dict[source_type]
             target_emb = node_emb_dict[target_type]
+
+            source_emb = source_emb[source_index]
 
             target_emb = scatter_mean(src=source_emb, index=target_index, dim=0, dim_size=target_emb.shape[0])
 
@@ -236,3 +240,36 @@ class SeHGNN(nn.Module):
             metapath_node_emb_dict[target_node_type] = torch.stack(node_emb_list, dim=0)
 
         return metapath_node_emb_dict
+
+
+#
+# from Config import Config
+#
+# config = Config()
+# # 节点嵌入字典
+# node_emb_dict = {
+#     'a': torch.ones((10, 2)),  # 10个类型为'a'的节点，每个节点有2维嵌入
+#     'b': 2 * torch.ones((5, 2)),  # 5个类型为'b'的节点，每个节点有2维嵌入
+#     'c': 3 * torch.ones((3, 2))  # 3个类型为'c'的节点，每个节点有2维嵌入
+# }
+# # 边字典
+# edge_dict = {
+#     ('a', 'a-b', 'b'): torch.stack([torch.randint(0, 10, (15,)), torch.randint(0, 5, (15,))]),  # 15条'a-b'类型的边
+#     ('a', 'a-c', 'c'): torch.stack([torch.randint(0, 10, (10,)), torch.randint(0, 3, (10,))]),  # 10条'a-c'类型的边
+#     ('c', 'c-b', 'b'): torch.stack([torch.randint(0, 3, (5,)), torch.randint(0, 5, (5,))]),
+#     ('b', 'b-a', 'a'): torch.stack([torch.randint(0, 5, (15,)), torch.randint(0, 10, (15,))]),
+# }
+# config.node_type_list = list(node_emb_dict.keys())
+# config.edge_type_list = list(edge_dict.keys())
+# config.num_node = 0
+# config.encoder_in_dim = {}
+# for node_type, node_emb in node_emb_dict.items():
+#     config.num_node += node_emb.shape[0]
+#     config.encoder_in_dim[node_type] = node_emb.shape[1]
+#
+# config.metapath_dict = {'a': [[('a', 'a-b', 'b'), ('b', 'b-a', 'a')]],
+#                         'b': [[('b', 'b-a', 'a'), ('a', 'a-c', 'c'), ('c', 'c-b', 'b')]]}
+# print()
+# cob = SeHGNN(config=config)
+# zdict = cob.forward(node_emb_dict, edge_dict)
+# print()

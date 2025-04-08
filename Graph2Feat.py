@@ -67,32 +67,84 @@ def to_homogeneous(node_emb_dict, edge_dict):
     return node_emb, node_range_dict, offset_edge
 
 
-class Graph2Feat_Student(nn.Module):
-    def __init__(self, config):
+from torch.nn import TransformerEncoder, TransformerEncoderLayer
+from torch_geometric.transforms import AddLaplacianEigenvectorPE, AddRandomWalkPE, GDC
+from torch.utils.data import DataLoader
+from torch import nn, Tensor
+from torch_geometric.data import Data
+from torch_geometric.nn import SAGEConv, HeteroConv, Linear, GCNConv
+from torch_scatter import scatter
+from torch_geometric.nn import HeteroLinear, Linear, BatchNorm
+
+import torch
+import torch.nn.functional as F
+import numpy as np
+import math
+
+torch.manual_seed(1)
+torch.cuda.manual_seed_all(1)
+
+
+def off_diagonal(x):
+    n, m = x.shape
+    assert n == m
+    return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()
+
+
+class Graph2Feat(nn.Module):
+    def __init__(self,config):
         super().__init__()
-        output_dim = config.encoder_out_dim
-        self.device = config.device
+        self.conv = HeteroConv({edge_type: SAGEConv((-1, -1), config.encoder_hidden_dim)
+                                for edge_type in config.edge_type_list},
+                               aggr='mean')
+        self.lin = nn.ModuleDict()
+        self.relu = torch.nn.PReLU()
         self.em_dict = nn.ModuleDict()
-        self.lin1 = nn.ModuleDict()
-        self.bn1 = nn.ModuleDict()
-        self.lin2 = nn.ModuleDict()
-        self.bn2 = nn.ModuleDict()
+        self.bn = nn.ModuleDict()
 
-        for nt in config.node_type_list:
-            self.em_dict[nt] = None
-            self.lin1[nt] = Linear(config.encoder_hidden_dim)
-            self.bn1[nt] = nn.BatchNorm(config.encoder_hidden_dim)
-            self.lin2[nt] = Linear(output_dim)
-            self.bn2[nt] = nn.BatchNorm(output_dim)
+    def forward(self, x_dict, edge_dict, infer=False):
+        device = next(self.parameters()).device
 
-    def forward(self, x_dict):
-        for node_type in x_dict:
-            if self.em_dict[node_type] is not None:
-                x_dict[node_type] = self.em_dict[node_type](x_dict[node_type].to(self.device).squeeze())
+        def to_device(x_dict):
+            return {k: v.to(device) for k, v in x_dict.items()}
 
-            x_dict[node_type] = self.lin1[node_type](x_dict[node_type].to(self.device))
-            x_dict[node_type] = self.bn1[node_type](x_dict[node_type])
-            x_dict[node_type] = self.lin2[node_type](x_dict[node_type])
-            x_dict[node_type] = self.bn2[node_type](x_dict[node_type])
+        z_dict = self.conv(to_device(x_dict), edge_index_dict=to_device(edge_dict))
 
-        return x_dict
+        return z_dict
+
+
+
+
+
+
+
+
+
+
+
+
+from Config import Config
+
+config = Config()
+# 节点嵌入字典
+node_emb_dict = {
+    'a': torch.ones((10, 2)),  # 10个类型为'a'的节点，每个节点有2维嵌入
+    'b': 2 * torch.ones((5, 2)),  # 5个类型为'b'的节点，每个节点有2维嵌入
+    'c': 3 * torch.ones((3, 2))  # 3个类型为'c'的节点，每个节点有2维嵌入
+}
+# 边字典
+edge_dict = {
+    ('a', 'a-b', 'b'): torch.stack([torch.randint(0, 10, (15,)), torch.randint(0, 5, (15,))]),  # 15条'a-b'类型的边
+    ('a', 'a-c', 'c'): torch.stack([torch.randint(0, 10, (10,)), torch.randint(0, 3, (10,))]),  # 10条'a-c'类型的边
+    ('c', 'c-b', 'b'): torch.stack([torch.randint(0, 3, (5,)), torch.randint(0, 5, (5,))])  # 5条'c-b'类型的边
+}
+config.node_type_list = list(node_emb_dict.keys())
+config.edge_type_list = list(edge_dict.keys())
+config.num_node = 0
+for node_type, node_emb in node_emb_dict.items():
+    config.num_node += node_emb.shape[0]
+
+print()
+m = Graph2Feat(config=config)
+zdict = m.forward(x_dict=node_emb_dict, edge_dict=edge_dict)
+print()

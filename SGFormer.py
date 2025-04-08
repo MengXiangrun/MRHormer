@@ -348,7 +348,7 @@ class SGFormer(torch.nn.Module):
         return z_dict
 
 
-#
+# #
 # from Config import Config
 # config = Config()
 # # 节点嵌入字典
@@ -365,7 +365,7 @@ class SGFormer(torch.nn.Module):
 # }
 # config.node_type_list=list(node_emb_dict.keys())
 # config.edge_type_list=list(edge_dict.keys())
-
+#
 # print()
 # sg=SGFormer(config=config)
 # zdict=sg.forward(x_dict=node_emb_dict,edge_index_dict=edge_dict)

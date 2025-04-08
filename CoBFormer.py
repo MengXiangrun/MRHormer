@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from tqdm import tqdm
 
-
+# CoB
 def to_homogeneous(node_emb_dict, edge_dict):
     # node number
     num_node_dict = dict()
@@ -70,39 +70,11 @@ class Linear(torch.nn.Module):
                                     out_channels=self.out_dim,
                                     weight_initializer='kaiming_uniform',
                                     bias=bias,
-                                    bias_initializer='zero')
+                                    bias_initializer='zeros')
         self.linear.reset_parameters()
 
     def forward(self, x):
         return self.linear(x)
-
-
-# CoB
-class GCN(torch.nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        self.config = config
-        self.in_linear = torch.nn.ModuleDict()
-        for node_type in config.node_type_list:
-            self.in_linear[node_type] = Linear(config.encoder_hidden_dim)
-
-        self.local = PyG.nn.GCN(in_channels=config.encoder_in_dim,
-                                hidden_channels=config.encoder_hidden_dim,
-                                out_channels=config.encoder_out_dim,
-                                num_layers=config.num_local_layer)
-
-    def forward(self, x_dict, edge_dict):
-        h_dict = dict()
-        for node_type, x in x_dict.items():
-            h_dict[node_type] = self.in_linear[node_type](x)
-
-        h, node_range_dict, edge = to_homogeneous(node_emb_dict=h_dict, edge_dict=edge_dict)
-        h = self.local.forward(x=h, edge_index=edge)
-
-        z_dict = to_heterogeneous_node_embedding(node_emb=h, node_range_dict=node_range_dict)
-
-        return z_dict
-
 
 def BGA_sparse_dropout(x: torch.Tensor, p: float, training: bool):
     x = x.coalesce()
@@ -246,13 +218,17 @@ class BGALayer(nn.Module):
         self.patch_transformer = BGALayer_MultiHeadAttention(n_head, channels, dropout)
         self.node_ffn = BGALayer_FFN(channels, dropout)
         self.patch_ffn = BGALayer_FFN(channels, dropout)
-        self.fuse_lin = Linear(2 * channels, channels)
-        self.use_patch_attn = use_patch_attn
+        self.fuse_lin = Linear(channels)
+        self.use_patch_attn = True
         self.attn = None
 
-    def forward(self, x, patch, attn_mask=None, need_attn=False):
+    def forward(self, x, patch=False, attn_mask=None, need_attn=False):
+        # if patch is False:
+        #     patch = torch.arange(start=0, end=x.shape[0], step=1, device=x.device, dtype=torch.int64)
         x = self.node_norm(x)
-        patch_x = x[patch]
+        patch_x = x
+        num_node, node_dim = patch_x.shape
+        patch_x = patch_x.view(1, num_node, node_dim)
         patch_x, attn = self.node_transformer(patch_x, patch_x, patch_x, attn_mask)
         patch_x = self.node_ffn(patch_x)
         if need_attn:
@@ -271,11 +247,12 @@ class BGALayer(nn.Module):
             p, _ = self.patch_transformer(p, p, p)
             p = self.patch_ffn(p).permute(1, 0, 2)
             #
-            p = p.repeat(1, patch.shape[1], 1)
+            p = p.repeat(1, num_node, 1)
             z = torch.cat([patch_x, p], dim=2)
             patch_x = F.relu(self.fuse_lin(z)) + patch_x
 
-        x[patch] = patch_x
+        # x[patch] = patch_x
+        x = patch_x.view(num_node, -1)
 
         return x
 
@@ -295,10 +272,12 @@ class BGA(torch.nn.Module):
         self.classifier = Linear(out_channels)
         self.attn = []
 
-    def forward(self, x: torch.Tensor, patch: torch.Tensor, need_attn=False):
-        patch_mask = (patch != self.num_nodes - 1).float().unsqueeze(-1)
-        attn_mask = torch.matmul(patch_mask, patch_mask.transpose(1, 2)).int()
-
+    def forward(self, x: torch.Tensor, patch=False, need_attn=False):
+        # if patch is False:
+        #     patch = torch.arange(start=0, end=x.shape[0], step=1, device=x.device, dtype=torch.int64)
+        # patch_mask = (patch != self.num_nodes - 1).float().unsqueeze(-1)
+        # attn_mask = torch.matmul(patch_mask, patch_mask.transpose(1, 2)).int()
+        attn_mask=None
         x = self.attribute_encoder(x)
         for i in range(0, self.layers):
             x = self.BGALayers[i](x, patch, attn_mask, need_attn)
@@ -310,39 +289,57 @@ class BGA(torch.nn.Module):
 
 
 class CoBFormer(torch.nn.Module):
-    def __init__(self, config,
-                 dropout1=0.5,
-                 dropout2=0.1,
-                 alpha=0.8,
-                 tau=0.5,
-                 use_patch_attn=True):
+    def __init__(self, config):
         super(CoBFormer, self).__init__()
+        self.in_linear = torch.nn.ModuleDict()
+        for node_type in config.node_type_list:
+            self.in_linear[node_type] = Linear(config.encoder_hidden_dim)
+
+        self.gcn = PyG.nn.GCN(in_channels=config.encoder_in_dim,
+                                hidden_channels=config.encoder_hidden_dim,
+                                out_channels=config.encoder_out_dim,
+                                num_layers=config.num_local_layer)
+
+        dropout1 = 0.5
+        dropout2 = 0.1
+        alpha = 0.8
+        tau = 0.5
+        use_patch_attn = True
+        self.in_channels = config.encoder_in_dim
+        self.hidden_channels = config.encoder_hidden_dim
+        self.out_channels = config.encoder_out_dim
         self.alpha = alpha
         self.tau = tau
         self.layers = config.num_global_self_layer
         self.n_head = config.num_global_head
         self.num_nodes = config.num_node
         self.dropout = nn.Dropout(dropout1)
-
-        self.gcn = GCN(config)
         self.bga = BGA(self.num_nodes,
                        self.in_channels,
                        self.hidden_channels,
                        self.out_channels,
-                       self.ayers,
+                       self.layers,
                        self.n_head,
                        use_patch_attn,
                        dropout1,
                        dropout2)
         self.attn = None
 
-    def forward(self, x: torch.Tensor, patch: torch.Tensor, edge_index: torch.Tensor, need_attn=False):
+    def forward(self, x_dict, patch=False, edge_index_dict=None, need_attn=False):
+        h_dict = dict()
+        for node_type, x in x_dict.items():
+            h_dict[node_type] = self.in_linear[node_type](x)
+
+        x, node_range_dict, edge_index = to_homogeneous(node_emb_dict=h_dict, edge_dict=edge_index_dict)
+
         z1 = self.gcn(x, edge_index)
         z2 = self.bga(x, patch, need_attn)
         if need_attn:
             self.attn = self.beyondformer.attn
 
-        return z1, z2
+        z = torch.cat([z1, z2], dim=1)
+        z_dict = to_heterogeneous_node_embedding(node_emb=z, node_range_dict=node_range_dict)
+        return z_dict
 
     def loss(self, pred1, pred2, label, mask):
         l1 = F.cross_entropy(pred1[mask], label[mask])
@@ -353,3 +350,34 @@ class CoBFormer(torch.nn.Module):
         l4 = F.cross_entropy(pred2[~mask], F.softmax(pred1, dim=1)[~mask])
         loss = self.alpha * (l1 + l2) + (1 - self.alpha) * (l3 + l4)
         return loss
+
+
+# #
+# from Config import Config
+#
+# config = Config()
+# # 节点嵌入字典
+# node_emb_dict = {
+#     'a': torch.ones((10, 2)),  # 10个类型为'a'的节点，每个节点有2维嵌入
+#     'b': 2 * torch.ones((5, 2)),  # 5个类型为'b'的节点，每个节点有2维嵌入
+#     'c': 3 * torch.ones((3, 2))  # 3个类型为'c'的节点，每个节点有2维嵌入
+# }
+# # 边字典
+# edge_dict = {
+#     ('a', 'a-b', 'b'): torch.stack([torch.randint(0, 10, (15,)), torch.randint(0, 5, (15,))]),  # 15条'a-b'类型的边
+#     ('a', 'a-c', 'c'): torch.stack([torch.randint(0, 10, (10,)), torch.randint(0, 3, (10,))]),  # 10条'a-c'类型的边
+#     ('c', 'c-b', 'b'): torch.stack([torch.randint(0, 3, (5,)), torch.randint(0, 5, (5,))])  # 5条'c-b'类型的边
+# }
+# config.node_type_list = list(node_emb_dict.keys())
+# config.edge_type_list = list(edge_dict.keys())
+# config.num_node = 0
+# for node_type, node_emb in node_emb_dict.items():
+#     config.num_node += node_emb.shape[0]
+#
+# print()
+# cob = CoBFormer(config=config)
+# zdict = cob.forward(x_dict=node_emb_dict, edge_index_dict=edge_dict)
+# print()
+
+
+

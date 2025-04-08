@@ -228,7 +228,7 @@ class MRHormer(torch.nn.Module):
         # global
         if self.GATT is not None:
             h_global_dict = x_dict.copy()
-            h_global_dict = self.GATT.forward(x_dict=h_global_dict)
+            h_global_dict = self.GATT.forward(z_dict=h_global_dict)
 
 
         if len(self.HGNN) > 0 and self.GATT is None:

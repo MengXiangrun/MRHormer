@@ -67,98 +67,75 @@ def to_homogeneous(node_emb_dict, edge_dict):
     return node_emb, node_range_dict, offset_edge
 
 
-class DEALLayer(nn.Module):  # Hidden Layer, Binary classification
-    def __init__(self, emb_dim, device, BCE_mode, mode='all', dropout_p=0.3):
-        super(DEALLayer, self).__init__()
-        self.emb_dim = emb_dim
-        self.mode = mode
-        self.device = device
-        self.BCE_mode = BCE_mode
-        self.Linear1 = Linear(self.emb_dim).to(self.device)
-        self.Linear2 = Linear(32).to(self.device)
-        self.linear4 = Linear(14696).to(self.device)
-        x_dim = 1
-        self.Linear3 = Linear(x_dim).to(self.device)
+def to_heterogeneous_node_embedding(node_emb, node_range_dict):
+    z_dict = dict()
+    for node_type, node_range in node_range_dict.items():
+        start_index, end_index = node_range
+        z = node_emb[start_index:end_index + 1, :]
+        z_dict[node_type] = z
 
+    return z_dict
+
+
+class DEAL(nn.Module):  # Hidden Layer, Binary classification
+    def __init__(self, config, ):
+        super(DEAL, self).__init__()
+        self.in_linear = torch.nn.ModuleDict()
+        for node_type in config.node_type_list:
+            self.in_linear[node_type] = Linear(config.encoder_hidden_dim)
+        self.emb_dim = config.encoder_hidden_dim
+        self.mode = 'all'
+        self.Linear1 = Linear(self.emb_dim)
+        self.Linear2 = Linear(self.emb_dim)
+        self.Linear3 = Linear(config.encoder_out_dim)
         self.cos = nn.CosineSimilarity(dim=1, eps=1e-6)
         self.pdist = nn.PairwiseDistance(p=2, keepdim=True)
-        self.softmax = nn.Softmax(dim=1)
-        self.elu = nn.ELU()
-        assert (self.mode in ['all', 'cos', 'dot', 'pdist']), "Wrong mode type"
 
-    def forward(self, f_embs, s_embs):
-        if self.mode == 'all':
-            x = torch.cat([f_embs, s_embs], dim=1)
-            x = F.rrelu(self.Linear1(x))
-            x = F.rrelu(self.Linear2(x))
-            x = F.rrelu(self.Linear3(x))
-            cos_x = self.cos(f_embs, s_embs).unsqueeze(1)
-            dot_x = torch.mul(f_embs, s_embs).sum(dim=1, keepdim=True)
-            pdist_x = self.pdist(f_embs, s_embs)
-            x = torch.cat([x, cos_x, dot_x, pdist_x], dim=1)
-        elif self.mode == 'cos':
-            x = self.cos(f_embs, s_embs).unsqueeze(1)
-        elif self.mode == 'dot':
-            x = torch.mul(f_embs, s_embs).sum(dim=1, keepdim=True)
-        elif self.mode == 'pdist':
-            x = self.pdist(f_embs, s_embs)
-
-        if self.BCE_mode:
-            return x.squeeze()
-        else:
-            x = self.linear_output(x)
-            x = F.rrelu(x)
-            return x
-
-    def evaluate(self, f_embs, s_embs):
-        if self.mode == 'all':
-            x = torch.cat([f_embs, s_embs], dim=1)
-            x = F.rrelu(self.Linear1(x))
-            x = F.rrelu(self.Linear2(x))
-            x = F.rrelu(self.Linear3(x))
-            cos_x = self.cos(f_embs, s_embs).unsqueeze(1)
-            dot_x = torch.mul(f_embs, s_embs).sum(dim=1, keepdim=True)
-            pdist_x = self.pdist(f_embs, s_embs)
-            x = torch.cat([x, cos_x, dot_x, pdist_x], dim=1)
-        elif self.mode == 'cos':
-            x = self.cos(f_embs, s_embs)
-            # x = self.linear4(x)
-        elif self.mode == 'dot':
-            x = torch.mul(f_embs, s_embs).sum(dim=1)
-        elif self.mode == 'pdist':
-            x = -self.pdist(f_embs, s_embs).squeeze()
-        return x
-
-
-class DEAL(torch.nn.Module):
-    def __init__(self, num_node, in_dim, hidden_dim, out_dim, node_type_list):
-        super(DEAL, self).__init__()
-        self.attr_emb = nn.Embedding(num_node, out_dim)
-        self.attr_num = in_dim
-        self.node_emb = nn.Embedding(num_node, out_dim)
-        self.in_linear = torch.nn.ModuleDict()
-        for node_type in node_type_list:
-            self.in_linear[node_type] = Linear(hidden_dim)
-
-    def forward(self, x_dict, edge_index_dict):
+    def forward(self, x_dict, edge_dict):
         h_dict = dict()
         for node_type, x in x_dict.items():
             h_dict[node_type] = self.in_linear[node_type](x)
 
-        h, node_range_dict, edge_index = to_homogeneous(node_emb_dict=h_dict, edge_dict=edge_index_dict)
+        h, node_range_dict, edge_index = to_homogeneous(node_emb_dict=h_dict, edge_dict=edge_dict)
 
-        h2 = self.node_emb(torch.arange(0, h.size(0)).to('cuda'))
-        x = torch.mm(h, self.attr_emb(torch.arange(h.size(1)).to(self.attr_emb.weight.device)))
-        z_dict = dict()
-        for node_type, node_range in node_range_dict.items():
-            start_index, end_index = node_range
-            z = x[start_index:end_index + 1, :]
-            z_dict[node_type] = z
+        f_embs = h.clone()
+        s_embs = h.clone()
+        x = torch.cat([f_embs, s_embs], dim=1)
+        x = F.rrelu(self.Linear1(x))
+        x = F.rrelu(self.Linear2(x))
+        x = F.rrelu(self.Linear3(x))
+        cos_x = self.cos(f_embs, s_embs).unsqueeze(1)
+        dot_x = torch.mul(f_embs, s_embs).sum(dim=1, keepdim=True)
+        pdist_x = self.pdist(f_embs, s_embs)
+        z = torch.cat([x, cos_x, dot_x, pdist_x], dim=1)
+        z_dict = to_heterogeneous_node_embedding(node_emb=z, node_range_dict=node_range_dict)
 
-        z2_dict = dict()
-        for node_type, node_range in node_range_dict.items():
-            start_index, end_index = node_range
-            z = h2[start_index:end_index + 1, :]
-            z2_dict[node_type] = z
+        return z_dict
 
-        return z_dict, z2_dict
+
+#
+# from Config import Config
+#
+# config = Config()
+# # 节点嵌入字典
+# node_emb_dict = {
+#     'a': torch.ones((10, 2)),  # 10个类型为'a'的节点，每个节点有2维嵌入
+#     'b': 2 * torch.ones((5, 2)),  # 5个类型为'b'的节点，每个节点有2维嵌入
+#     'c': 3 * torch.ones((3, 2))  # 3个类型为'c'的节点，每个节点有2维嵌入
+# }
+# # 边字典
+# edge_dict = {
+#     ('a', 'a-b', 'b'): torch.stack([torch.randint(0, 10, (15,)), torch.randint(0, 5, (15,))]),  # 15条'a-b'类型的边
+#     ('a', 'a-c', 'c'): torch.stack([torch.randint(0, 10, (10,)), torch.randint(0, 3, (10,))]),  # 10条'a-c'类型的边
+#     ('c', 'c-b', 'b'): torch.stack([torch.randint(0, 3, (5,)), torch.randint(0, 5, (5,))])  # 5条'c-b'类型的边
+# }
+# config.node_type_list = list(node_emb_dict.keys())
+# config.edge_type_list = list(edge_dict.keys())
+# config.num_node = 0
+# for node_type, node_emb in node_emb_dict.items():
+#     config.num_node += node_emb.shape[0]
+#
+# print()
+# m = DEAL(config=config)
+# zdict = m.forward(x_dict=node_emb_dict, edge_dict=edge_dict)
+# print()

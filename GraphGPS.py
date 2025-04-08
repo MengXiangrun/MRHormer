@@ -86,16 +86,15 @@ class GraphGPS(torch.nn.Module):
         self.config = config
         self.in_linear = torch.nn.ModuleDict()
         for node_type in config.node_type_list:
-            self.in_linear[node_type] = Linear(config.encoder_hidden_dim)
+            self.in_linear[node_type] = Linear(config.encoder_out_dim)
 
         self.GPSConvs = ModuleList()
         for _ in range(1):
             gnn = GATConv(in_channels=config.encoder_in_dim,
-                          hidden_channels=config.encoder_hidden_dim,
-                          out_channels=config.encoder_out_dim,
+                          out_channels=config.encoder_out_dim//config.num_local_head,
                           heads=config.num_local_head)
 
-            conv = GPSConv(channels=config.encoder_hidden_dim,
+            conv = GPSConv(channels=config.encoder_out_dim,
                            conv=gnn,
                            heads=config.num_local_head,
                            attn_type='multihead')
@@ -112,3 +111,31 @@ class GraphGPS(torch.nn.Module):
         z_dict = to_heterogeneous_node_embedding(node_emb=h, node_range_dict=node_range_dict)
 
         return z_dict
+
+
+#
+from Config import Config
+
+config = Config()
+# 节点嵌入字典
+node_emb_dict = {
+    'a': torch.ones((10, 2)),  # 10个类型为'a'的节点，每个节点有2维嵌入
+    'b': 2 * torch.ones((5, 2)),  # 5个类型为'b'的节点，每个节点有2维嵌入
+    'c': 3 * torch.ones((3, 2))  # 3个类型为'c'的节点，每个节点有2维嵌入
+}
+# 边字典
+edge_dict = {
+    ('a', 'a-b', 'b'): torch.stack([torch.randint(0, 10, (15,)), torch.randint(0, 5, (15,))]),  # 15条'a-b'类型的边
+    ('a', 'a-c', 'c'): torch.stack([torch.randint(0, 10, (10,)), torch.randint(0, 3, (10,))]),  # 10条'a-c'类型的边
+    ('c', 'c-b', 'b'): torch.stack([torch.randint(0, 3, (5,)), torch.randint(0, 5, (5,))])  # 5条'c-b'类型的边
+}
+config.node_type_list = list(node_emb_dict.keys())
+config.edge_type_list = list(edge_dict.keys())
+config.num_node = 0
+for node_type, node_emb in node_emb_dict.items():
+    config.num_node += node_emb.shape[0]
+
+print()
+cob = GraphGPS(config=config)
+zdict = cob.forward(node_emb_dict, edge_dict)
+print()
