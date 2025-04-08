@@ -241,6 +241,8 @@ class SGModule(torch.nn.Module):
             fc.reset_parameters()
 
     def forward(self, x: Tensor, batch=False):
+        if batch is False:
+            batch = torch.ones(size=(x.shape[0],), device=x.device, dtype=torch.int64)
         # to dense batch expects sorted batch
         batch, indices = batch.sort(stable=True)
         rev_perm = torch.empty_like(indices)
@@ -331,7 +333,7 @@ class SGFormer(torch.nn.Module):
         for node_type, x in x_dict.items():
             h_dict[node_type] = self.in_linear[node_type](x)
 
-        h, node_range_dict, edge_index = to_homogeneous(node_emb_dict=h_dict, edge_dict=edge_index_dict)
+        x, node_range_dict, edge_index = to_homogeneous(node_emb_dict=h_dict, edge_dict=edge_index_dict)
 
         x1 = self.trans_conv(x, batch)
         x2 = self.graph_conv(x, edge_index)
@@ -344,3 +346,27 @@ class SGFormer(torch.nn.Module):
         z_dict = to_heterogeneous_node_embedding(node_emb=x, node_range_dict=node_range_dict)
 
         return z_dict
+
+
+#
+# from Config import Config
+# config = Config()
+# # 节点嵌入字典
+# node_emb_dict = {
+#     'a': torch.ones((10, 2)),  # 10个类型为'a'的节点，每个节点有2维嵌入
+#     'b': 2 * torch.ones((5, 2)),  # 5个类型为'b'的节点，每个节点有2维嵌入
+#     'c': 3 * torch.ones((3, 2))   # 3个类型为'c'的节点，每个节点有2维嵌入
+# }
+# # 边字典
+# edge_dict = {
+#     ('a', 'a-b', 'b'): torch.stack([torch.randint(0, 10, (15,)), torch.randint(0, 5, (15,))]),  # 15条'a-b'类型的边
+#     ('a', 'a-c', 'c'): torch.stack([torch.randint(0, 10, (10,)), torch.randint(0, 3, (10,))]),  # 10条'a-c'类型的边
+#     ('c', 'c-b', 'b'): torch.stack([torch.randint(0, 3, (5,)), torch.randint(0, 5, (5,))])      # 5条'c-b'类型的边
+# }
+# config.node_type_list=list(node_emb_dict.keys())
+# config.edge_type_list=list(edge_dict.keys())
+
+# print()
+# sg=SGFormer(config=config)
+# zdict=sg.forward(x_dict=node_emb_dict,edge_index_dict=edge_dict)
+# print()
