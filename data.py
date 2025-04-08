@@ -32,6 +32,7 @@ class TCMDataset():
         super().__init__()
         self.metapath_dict = dict()
         self.dataset = dataset
+        assert self.dataset in ['HeNetRW', 'HIT', 'TCMSP'], f'self.dataset not in [HeNetRW, HIT, TCMSP]'
 
         dir = f'./TCMDataset/{dataset}/'
         save_path = os.path.join(dir, f'{dataset}.pth')
