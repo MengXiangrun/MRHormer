@@ -1,19 +1,12 @@
 import torch
-from torch.nn import (
-    Linear,
-    ModuleList,
-)
 import torch_geometric as PyG
-from torch_geometric.nn import GATConv, GPSConv
-from typing import Optional
-import torch
 import torch.nn.functional as F
-from torch import Tensor
 from torch_geometric.nn.conv import GCNConv
 from torch_geometric.utils import to_dense_batch
 from typing import Optional
 import torch
 from torch import Tensor
+
 
 def to_homogeneous(node_emb_dict, edge_dict):
     # node number
@@ -85,10 +78,6 @@ class Linear(torch.nn.Module):
 
     def forward(self, x):
         return self.linear(x)
-
-
-
-
 
 
 class SGFormerAttention(torch.nn.Module):

@@ -1,23 +1,5 @@
 import torch_geometric as PyG
-import torch
-import copy
-import pandas as pd
-from torch_scatter import scatter_mean
-import numpy as np
-from typing import Dict, List, Optional, Tuple, Union
-import torch
-import torch.nn.functional as F
-from torch import Tensor, nn
-from torch_geometric.nn.conv import MessagePassing
-from torch_geometric.nn.dense import Linear
-from torch_geometric.nn.inits import glorot, reset
 from torch_geometric.typing import PairTensor  # noqa
-from torch_geometric.typing import Adj, EdgeType, Metadata, NodeType, OptTensor
-from torch_geometric.utils import softmax
-import math
-from torch.nn import Sequential, Linear
-import torch.nn as nn
-import torch.nn.functional as F
 import math
 from typing import Dict, List, Optional, Tuple, Union
 import torch
@@ -32,13 +14,21 @@ from torch_geometric.utils import softmax
 from torch_geometric.utils.hetero import construct_bipartite_edge_index
 
 
-# Metapath-free Heterogeneous GNN Baselines#############################################################################
+class Linear(torch.nn.Module):
+    def __init__(self, out_dim):
+        super(Linear, self).__init__()
+        self.out_dim = out_dim
+        self.linear = PyG.nn.Linear(in_channels=-1,
+                                    out_channels=self.out_dim,
+                                    weight_initializer='kaiming_uniform',
+                                    bias=True,
+                                    bias_initializer=None)
+        self.linear.reset_parameters()
+
+    def forward(self, x):
+        return self.linear(x)
 
 
-# HGT(WWW 2019)
-# Heterogeneous Graph Transformer
-# https://arxiv.org/abs/2003.01332
-# from openhgnn.models import HGT
 class HGTConv(MessagePassing):
     def __init__(self, in_channels: Union[int, Dict[str, int]],
                  out_channels: int,

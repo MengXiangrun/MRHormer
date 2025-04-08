@@ -1,7 +1,19 @@
 import torch_geometric as PyG
-from torch_geometric.nn.dense import Linear
-from torch.nn import Sequential, Linear
 import torch
+
+class Linear(torch.nn.Module):
+    def __init__(self, out_dim):
+        super(Linear, self).__init__()
+        self.out_dim = out_dim
+        self.linear = PyG.nn.Linear(in_channels=-1,
+                                    out_channels=self.out_dim,
+                                    weight_initializer='kaiming_uniform',
+                                    bias=True,
+                                    bias_initializer=None)
+        self.linear.reset_parameters()
+
+    def forward(self, x):
+        return self.linear(x)
 
 def to_homogeneous(node_emb_dict, edge_dict):
     # node number
