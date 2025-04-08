@@ -6,14 +6,14 @@ import torch.nn.functional as F
 
 
 class Linear(torch.nn.Module):
-    def __init__(self, out_dim):
-        super(Linear, self).__init__()
+    def __init__(self, out_dim, bias=True):
+        super().__init__()
         self.out_dim = out_dim
         self.linear = PyG.nn.Linear(in_channels=-1,
                                     out_channels=self.out_dim,
                                     weight_initializer='kaiming_uniform',
-                                    bias=True,
-                                    bias_initializer=None)
+                                    bias=bias,
+                                    bias_initializer='zeros')
         self.linear.reset_parameters()
 
     def forward(self, x):
@@ -78,7 +78,7 @@ class DEALLayer(nn.Module):  # Hidden Layer, Binary classification
         self.Linear2 = Linear(32).to(self.device)
         self.linear4 = Linear(14696).to(self.device)
         x_dim = 1
-        self.Linear3 = nn.Linear(32, x_dim).to(self.device)
+        self.Linear3 = Linear(x_dim).to(self.device)
 
         self.cos = nn.CosineSimilarity(dim=1, eps=1e-6)
         self.pdist = nn.PairwiseDistance(p=2, keepdim=True)
@@ -143,9 +143,10 @@ class DEAL(torch.nn.Module):
     def forward(self, x_dict, edge_index_dict):
         h_dict = dict()
         for node_type, x in x_dict.items():
-            h = self.in_linear[node_type](x)
-            h_dict[node_type] = h
+            h_dict[node_type] = self.in_linear[node_type](x)
+
         h, node_range_dict, edge_index = to_homogeneous(node_emb_dict=h_dict, edge_dict=edge_index_dict)
+
         h2 = self.node_emb(torch.arange(0, h.size(0)).to('cuda'))
         x = torch.mm(h, self.attr_emb(torch.arange(h.size(1)).to(self.attr_emb.weight.device)))
         z_dict = dict()

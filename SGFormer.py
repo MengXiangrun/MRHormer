@@ -1,4 +1,3 @@
-import torch
 import torch_geometric as PyG
 import torch.nn.functional as F
 from torch_geometric.nn.conv import GCNConv
@@ -66,14 +65,14 @@ def to_heterogeneous_node_embedding(node_emb, node_range_dict):
 
 
 class Linear(torch.nn.Module):
-    def __init__(self, out_dim):
-        super(Linear, self).__init__()
+    def __init__(self, out_dim, bias=True):
+        super().__init__()
         self.out_dim = out_dim
         self.linear = PyG.nn.Linear(in_channels=-1,
                                     out_channels=self.out_dim,
                                     weight_initializer='kaiming_uniform',
-                                    bias=True,
-                                    bias_initializer=None)
+                                    bias=bias,
+                                    bias_initializer='zeros')
         self.linear.reset_parameters()
 
     def forward(self, x):
@@ -98,9 +97,9 @@ class SGFormerAttention(torch.nn.Module):
         self.head_channels = head_channels
 
         inner_channels = head_channels * heads
-        self.q = torch.nn.Linear(channels, inner_channels, bias=qkv_bias)
-        self.k = torch.nn.Linear(channels, inner_channels, bias=qkv_bias)
-        self.v = torch.nn.Linear(channels, inner_channels, bias=qkv_bias)
+        self.q = Linear(inner_channels, bias=qkv_bias)
+        self.k = Linear(inner_channels, bias=qkv_bias)
+        self.v = Linear(inner_channels, bias=qkv_bias)
 
     def forward(self, x: Tensor, mask: Optional[Tensor] = None) -> Tensor:
         r"""Forward pass.
@@ -174,7 +173,7 @@ class GraphModule(torch.nn.Module):
 
         self.convs = torch.nn.ModuleList()
         self.fcs = torch.nn.ModuleList()
-        self.fcs.append(torch.nn.Linear(in_channels, hidden_channels))
+        self.fcs.append(Linear(hidden_channels))
 
         self.bns = torch.nn.ModuleList()
         self.bns.append(torch.nn.BatchNorm1d(hidden_channels))
@@ -222,7 +221,7 @@ class SGModule(torch.nn.Module):
 
         self.attns = torch.nn.ModuleList()
         self.fcs = torch.nn.ModuleList()
-        self.fcs.append(torch.nn.Linear(in_channels, hidden_channels))
+        self.fcs.append(Linear(hidden_channels))
         self.bns = torch.nn.ModuleList()
         self.bns.append(torch.nn.LayerNorm(hidden_channels))
         for _ in range(num_layers):

@@ -12,14 +12,14 @@ from torch_geometric.utils import softmax
 
 
 class Linear(torch.nn.Module):
-    def __init__(self, out_dim):
-        super(Linear, self).__init__()
+    def __init__(self, out_dim, bias=True):
+        super().__init__()
         self.out_dim = out_dim
         self.linear = PyG.nn.Linear(in_channels=-1,
                                     out_channels=self.out_dim,
                                     weight_initializer='kaiming_uniform',
-                                    bias=True,
-                                    bias_initializer=None)
+                                    bias=bias,
+                                    bias_initializer='zeros')
         self.linear.reset_parameters()
 
     def forward(self, x):
@@ -75,11 +75,11 @@ class HANConv(MessagePassing):
         self.out_channels = out_channels
         self.negative_slope = negative_slope
         self.dropout = dropout
-        self.k_lin = nn.Linear(out_channels, out_channels)
+        self.k_lin = Linear(out_channels)
         self.q = nn.Parameter(torch.empty(1, out_channels))
         self.proj = nn.ModuleDict()
         for node_type, in_channels in self.in_channels.items():
-            self.proj[node_type] = Linear(in_channels, out_channels)
+            self.proj[node_type] = Linear(out_channels)
         self.lin_src = nn.ParameterDict()
         self.lin_dst = nn.ParameterDict()
         dim = out_channels // heads

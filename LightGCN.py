@@ -2,14 +2,14 @@ import torch_geometric as PyG
 import torch
 
 class Linear(torch.nn.Module):
-    def __init__(self, out_dim):
-        super(Linear, self).__init__()
+    def __init__(self, out_dim, bias=True):
+        super().__init__()
         self.out_dim = out_dim
         self.linear = PyG.nn.Linear(in_channels=-1,
                                     out_channels=self.out_dim,
                                     weight_initializer='kaiming_uniform',
-                                    bias=True,
-                                    bias_initializer=None)
+                                    bias=bias,
+                                    bias_initializer='zeros')
         self.linear.reset_parameters()
 
     def forward(self, x):

@@ -4,7 +4,7 @@ import pandas as pd
 import torch
 from data import TCMDataset, HeterogeneousGraphData
 from function import train, test, EarlyStopping, save_excel
-from models import GCN, GAT, GIN, GATv2, GraphSAGE, LightGCN, EdgeDecoder
+from EdgeDecoder import GCN, GAT, GIN, GATv2, GraphSAGE, LightGCN, EdgeDecoder
 import datetime
 
 

@@ -1,12 +1,25 @@
 import torch_geometric as PyG
 from torch_scatter import scatter_mean
-from torch_geometric.nn.dense import Linear
 from torch_geometric.typing import PairTensor  # noqa
-from torch.nn import Linear
 import torch.nn as nn
 import torch.nn.functional as F
 import math
 import torch
+
+class Linear(torch.nn.Module):
+    def __init__(self, out_dim, bias=True):
+        super().__init__()
+        self.out_dim = out_dim
+        self.linear = PyG.nn.Linear(in_channels=-1,
+                                    out_channels=self.out_dim,
+                                    weight_initializer='kaiming_uniform',
+                                    bias=bias,
+                                    bias_initializer='zeros')
+        self.linear.reset_parameters()
+
+    def forward(self, x):
+        return self.linear(x)
+
 
 
 def create_metapath_edge_index(node_emb_dict, edge_dict, metapath_dict):
@@ -48,9 +61,9 @@ class SeHGNN_Transformer(nn.Module):
         self.num_heads = num_heads
         assert self.n_channels % (self.num_heads * 4) == 0
 
-        self.query = nn.Linear(self.n_channels, self.n_channels // 4)
-        self.key = nn.Linear(self.n_channels, self.n_channels // 4)
-        self.value = nn.Linear(self.n_channels, self.n_channels)
+        self.query = Linear(self.n_channels // 4)
+        self.key = Linear(self.n_channels // 4)
+        self.value = Linear(self.n_channels)
 
         self.gamma = nn.Parameter(torch.tensor([0.]))
         self.att_drop = nn.Dropout(att_drop)
@@ -66,22 +79,6 @@ class SeHGNN_Transformer(nn.Module):
             assert 0, f'Unrecognized activation function {act} for class Transformer'
 
         self.reset_parameters()
-
-    def reset_parameters(self):
-
-        def xavier_uniform_(tensor, gain=1.):
-            fan_in, fan_out = tensor.size()[-2:]
-            std = gain * math.sqrt(2.0 / float(fan_in + fan_out))
-            a = math.sqrt(3.0) * std  # Calculate uniform bounds from standard deviation
-            return torch.nn.init._no_grad_uniform_(tensor, -a, a)
-
-        gain = nn.init.calculate_gain("relu")
-        xavier_uniform_(self.query.weight, gain=gain)
-        xavier_uniform_(self.key.weight, gain=gain)
-        xavier_uniform_(self.value.weight, gain=gain)
-        nn.init.zeros_(self.query.bias)
-        nn.init.zeros_(self.key.bias)
-        nn.init.zeros_(self.value.bias)
 
     def forward(self, x, mask=None):
         # batchsize(num_node), num_metapaths, channels

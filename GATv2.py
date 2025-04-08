@@ -3,18 +3,20 @@ import torch
 
 
 class Linear(torch.nn.Module):
-    def __init__(self, out_dim):
-        super(Linear, self).__init__()
+    def __init__(self, out_dim, bias=True):
+        super().__init__()
         self.out_dim = out_dim
         self.linear = PyG.nn.Linear(in_channels=-1,
                                     out_channels=self.out_dim,
                                     weight_initializer='kaiming_uniform',
-                                    bias=True,
-                                    bias_initializer=None)
+                                    bias=bias,
+                                    bias_initializer='zeros')
         self.linear.reset_parameters()
 
     def forward(self, x):
         return self.linear(x)
+
+
 def to_homogeneous(node_emb_dict, edge_dict):
     # node number
     num_node_dict = dict()
@@ -70,6 +72,7 @@ def to_heterogeneous_node_embedding(node_emb, node_range_dict):
         z_dict[node_type] = z
 
     return z_dict
+
 
 class GATv2(torch.nn.Module):
     def __init__(self, config):
