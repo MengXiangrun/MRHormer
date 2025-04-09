@@ -3,7 +3,7 @@ import torch_scatter
 import torch
 import torch_geometric as PyG
 import numpy as np
-from transformer import SimpleTransformer
+from transformer import SimpleTransformer, DecoderTransformer
 
 
 class Linear(torch.nn.Module):
@@ -334,6 +334,7 @@ class TopologyRobustLocalAttention(torch.nn.Module):
 class MultiRelationGlobalAttention(torch.nn.Module):
     def __init__(self, config, in_dim, hidden_dim, out_dim, node_type_list, edge_type_list, num_head, self_layers):
         super().__init__()
+        self.config = config
         self.in_dim = in_dim
         self.hidden_dim = hidden_dim
         self.out_dim = out_dim
@@ -349,18 +350,26 @@ class MultiRelationGlobalAttention(torch.nn.Module):
         for node_type in node_type_list:
             self.in_linear[node_type] = Linear(self.hidden_dim)
             self.out_linear[node_type] = Linear(self.out_dim)
-            self.global_attention[node_type] = SimpleTransformer(config=config)
-            # self.global_attention[node_type] = torch.nn.Transformer(d_model=self.hidden_dim,
-            #                                                         num_encoder_layers=self_layers,
-            #                                                         num_decoder_layers=self_layers,
-            #                                                         batch_first=True,)
+            if config.dataset_name == 'HeNetRW':
+                self.global_attention[node_type] = SimpleTransformer(config=config)
+            elif config.dataset_name == 'TCMSP':
+                self.global_attention[node_type] = DecoderTransformer(config=config)
+            else:
+                self.global_attention[node_type] = torch.nn.Transformer(d_model=self.hidden_dim,
+                                                                        num_encoder_layers=self_layers,
+                                                                        num_decoder_layers=self_layers,
+                                                                        batch_first=True)
+
+        self.target_node_type_list = config.target_node_type_list
 
         self.target_source_dict = {}
         for edge_type in edge_type_list:
             source_type = edge_type[0]
             target_type = edge_type[-1]
+            if target_type not in self.target_node_type_list: continue
             self.target_source_dict.setdefault(target_type, [])
             self.target_source_dict[target_type].append(source_type)
+        print()
 
     def forward(self, x_dict):
         h_dict = x_dict.copy()
@@ -378,9 +387,10 @@ class MultiRelationGlobalAttention(torch.nn.Module):
 
             source_emb = torch.cat(source_emb_list, dim=0)
             target_emb = h_dict[target_type]
-
-            target_emb, attention = self.global_attention[target_type](source_emb, target_emb)
-            # target_emb = self.global_attention[target_type](source_emb, target_emb)
+            if self.config.dataset_name in ['HeNetRW', 'TCMSP']:
+                target_emb, attention = self.global_attention[target_type](source_emb, target_emb)
+            else:
+                target_emb = self.global_attention[target_type](source_emb, target_emb)
             # target_emb = self.global_attention[target_type](key=source_emb, query=target_emb, value=source_emb)[0]
 
             node_emb_dict[target_type] = target_emb
@@ -464,6 +474,7 @@ class MRHormer(torch.nn.Module):
         if len(self.TRLA) > 0 and self.MRGA is not None:
             h_dict = dict()
             for node_type in x_dict.keys():
+                if node_type not in self.config.target_node_type_list: continue
                 h_local = h_local_dict[node_type]
                 h_global = h_global_dict[node_type]
                 h_dict[node_type] = torch.cat([h_local, h_global], dim=1)

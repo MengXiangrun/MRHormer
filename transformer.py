@@ -180,3 +180,34 @@ class SimpleTransformer(torch.nn.Module):
             target_emb = self.cross_norm2(target_emb)
 
         return target_emb, attention
+
+class VanillaTransformer(torch.nn.Transformer):
+    def __init__(self):
+        super().__init__()
+
+class DecoderTransformer(torch.nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.num_layer = config.num_global_self_layer
+
+        self.cross_layers = torch.nn.ModuleList()
+        for _ in range(self.num_layer ):
+            cross = MHA(emb_dim=config.encoder_hidden_dim, num_head=config.num_global_head)
+            self.cross_layers.append(cross)
+        self.cross_ffn = FFN(input_dim=config.encoder_hidden_dim)
+        self.cross_norm1 = torch.nn.LayerNorm(config.encoder_hidden_dim, eps=1e-5, bias=True)
+        self.cross_norm2 = torch.nn.LayerNorm(config.encoder_hidden_dim, eps=1e-5, bias=True)
+
+    def forward(self, source_emb, target_emb):
+        for layer_index in range(self.num_layer):
+            residual = target_emb.clone()
+            target_emb, attention = self.cross_layers[layer_index].forward(source_emb=source_emb, target_emb=target_emb)
+            target_emb += residual
+            target_emb = self.cross_norm1(target_emb)
+
+            residual = target_emb.clone()
+            target_emb = self.cross_ffn(target_emb)
+            target_emb += residual
+            target_emb = self.cross_norm2(target_emb)
+
+        return target_emb, attention

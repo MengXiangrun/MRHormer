@@ -2,12 +2,15 @@ import random
 import numpy as np
 import pandas as pd
 import torch
+from space4hgnn.generate_yaml import patience
+
 from data import TCMDataset, HeterogeneousGraphData
-from function import train, test, EarlyStopping, save_excel,set_seed
+from function import train, test, EarlyStopping, save_excel, set_seed
 from EdgeDecoder import EdgeDecoder
 import datetime
 from Config import Config
 from MRHormer import MRHormer
+from time import perf_counter
 
 class Model(torch.nn.Module):
     def __init__(self, Encoder, Decoder):
@@ -21,22 +24,25 @@ device = torch.device("cuda:0")
 set_seed()
 worktype = ''  # HyPara,Ablation
 # 'HeNetRW', 'TCMSP', 'HIT'
-for dataset_name in ['HeNetRW']:
+for dataset_name in  ['HeNetRW', 'HIT', 'TCMSP']:
     # data
     dataset = TCMDataset(dataset=dataset_name)
     config = Config()
+    config.dataset_name = dataset_name
+    torch.cuda.empty_cache()
 
     if dataset_name in ['HeNetRW', 'HIT']:
         config.num_local_layer = 1  # best 1
         config.num_global_self_layer = 2  # best 2
         config.encoder_hidden_dim = 128
         config.optimizer_learning_rate = 0.0001
-    if 'TCMSP' in dataset_name:
+        patience = 50
+    if dataset_name in ['TCMSP']:
         config.num_local_layer = 2  # best 2
         config.num_global_self_layer = 4  # best 4
-        config.encoder_hidden_dim = 16
+        config.encoder_hidden_dim = 128
         config.optimizer_learning_rate = 0.00005
-
+        patience = 100
 
     result_list = []
     for train_val_test in dataset.data_list:
@@ -51,16 +57,20 @@ for dataset_name in ['HeNetRW']:
         optimizer = torch.optim.Adam(params=model.parameters(),
                                      lr=config.optimizer_learning_rate,
                                      weight_decay=config.optimizer_weight_decay)
-
         train_data.to(device)
         val_data.to(device)
-        stop = EarlyStopping(patience=50, threshold=0.0005)
+        stop = EarlyStopping(patience=patience, threshold=0.0005)
         with torch.no_grad():  # Initialize lazy modules.
             out = model.encoder.forward(train_data.node_feature_dict, train_data.message_edge_dict)
             del out
 
         # train
+        start_time = perf_counter()
+        epoch_use_time_list = []
+
         for epoch in range(0, 10001):
+            epoch_start_time = perf_counter()
+
             print()
             if stop.stop:
                 break
@@ -101,6 +111,29 @@ for dataset_name in ['HeNetRW']:
                   f'accuracy {accuracy:.4f} recall {recall:.4f} precision {precision:.4f} f1 {f1:.4f} '
                   f'hr@{k} {hr:.4f} ndcg@{k} {ndcg:.4f}')
 
+            epoch_now_time = perf_counter()
+            epoch_use_time = epoch_now_time - epoch_start_time
+            epoch_use_time_list.append(epoch_use_time)
+
+            if epoch == 10:
+                now_time = perf_counter()
+                use_time = now_time - start_time
+                print(f'{epoch} use time {use_time}')
+                config.use_time_dict[epoch]=use_time
+
+            if epoch == 50:
+                now_time = perf_counter()
+                use_time = now_time - start_time
+                print(f'{epoch} use time {use_time}')
+                config.use_time_dict[epoch]=use_time
+
+
+            if epoch == 100:
+                now_time = perf_counter()
+                use_time = now_time - start_time
+                print(f'{epoch} use time {use_time}')
+                config.use_time_dict[epoch]=use_time
+
             # early_stopping
             if 'HeNetRW' in dataset_name:
                 stop.record(model=model, now_val_loss=-aucroc)
@@ -110,7 +143,8 @@ for dataset_name in ['HeNetRW']:
                 stop.record(model=model, now_val_loss=-aucroc)
 
         # save model
-        stop.save(dataset_name=dataset_name, model=model)
+        stop.save(dataset_name=dataset_name, unseen_node_type=test_data.unseen_node_type, model=model)
+        config.average_use_time_per_epoch = sum(epoch_use_time_list) / len(epoch_use_time_list)
 
         # test
         test_data.to(device)
@@ -145,7 +179,7 @@ for dataset_name in ['HeNetRW']:
 
     now = datetime.datetime.now()
     now_time = now.strftime("%Y_%m_%d_%H_%M_%S")
-    save_excel_path = f'./{dataset_name}_{worktype}/{type(model.encoder).__name__}_{now_time}.xlsx'
+    save_excel_path = f'./{dataset_name}_{worktype}/{type(model.encoder).__name__}.xlsx'
     print(save_excel_path)
     save_excel(df=result_dataframe, file_path=save_excel_path, is_index=True)
 
@@ -153,7 +187,7 @@ for dataset_name in ['HeNetRW']:
     pd.set_option('display.max_columns', None)
     print(result_dataframe)
 
-    save_excel_path = f'./{dataset_name}_{worktype}/{type(model.encoder).__name__}_{now_time}_config.xlsx'
+    save_excel_path = f'./{dataset_name}_{worktype}/{type(model.encoder).__name__}_config.xlsx'
     config.save_to_excel(file_path=save_excel_path)
 
     print('Done')

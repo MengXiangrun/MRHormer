@@ -124,7 +124,7 @@ def train(model, optimizer, BCELoss, device, dataset_name,
 
     # encode
     node_emb_dict = model.encoder.forward(node_feature_dict,
-                                          edge_index_dict=message_edge_dict)
+                                          message_edge_dict)
 
     # sample negative edges randomly
     pos_neg_edges_dict = dict()
@@ -180,7 +180,7 @@ def test(model, optimizer, BCELoss, device, dataset_name,
 
         # encode
         node_emb_dict = model.encoder.forward(node_feature_dict,
-                                              edge_index_dict=message_edge_dict)
+                                              message_edge_dict)
 
         # sample negative edges randomly
         pos_neg_edges_dict = dict()
@@ -281,7 +281,7 @@ class EarlyStopping():
         if now_val_loss < self.min_val_loss:
             self.best_model_parameter = model.state_dict()
             self.patience = self.total_patience
-            self.min_val_loss=now_val_loss
+            self.min_val_loss = now_val_loss
 
         if now_val_loss >= self.min_val_loss:
             self.patience = self.patience - 1
@@ -289,11 +289,11 @@ class EarlyStopping():
         if self.patience <= 0:
             self.stop = True
 
-        print('patience:',self.patience)
+        print('patience:', self.patience)
 
-    def save(self, dataset_name, model):
-        self.save_path = dataset_name + '_' + type(model.encoder).__name__
-        self.save_path=f'{self.save_path}.pth'
+    def save(self, dataset_name, unseen_node_type, model):
+        self.save_path = dataset_name + '_' + unseen_node_type + '_' + type(model.encoder).__name__
+        self.save_path = f'{self.save_path}.pth'
         torch.save(self.best_model_parameter, self.save_path)
         print('best_model_parameter saved')
 

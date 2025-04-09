@@ -27,6 +27,12 @@ class Config():
         self.is_residual_connection = False
         self.metapath_dict=None
         self.is_selfloop=True
+        self.dataset_name=True
+        self.target_node_type_list =['herb', 'target']
+
+        self.average_use_time_per_epoch = None
+        self.use_time_dict=dict()
+
 
     def save_to_excel(self, file_path):
         data = {key: [value] for key, value in vars(self).items()}
