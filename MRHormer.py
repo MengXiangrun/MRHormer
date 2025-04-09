@@ -3,7 +3,7 @@ import torch_scatter
 import torch
 import torch_geometric as PyG
 import numpy as np
-from transformer import myTransformer
+from transformer import SimpleTransformer
 
 
 class Linear(torch.nn.Module):
@@ -349,7 +349,7 @@ class MultiRelationGlobalAttention(torch.nn.Module):
         for node_type in node_type_list:
             self.in_linear[node_type] = Linear(self.hidden_dim)
             self.out_linear[node_type] = Linear(self.out_dim)
-            self.global_attention[node_type] = myTransformer(config=config)
+            self.global_attention[node_type] = SimpleTransformer(config=config)
             # self.global_attention[node_type] = torch.nn.Transformer(d_model=self.hidden_dim,
             #                                                         num_encoder_layers=self_layers,
             #                                                         num_decoder_layers=self_layers,

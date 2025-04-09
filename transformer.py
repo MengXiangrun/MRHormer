@@ -116,7 +116,7 @@ class FFN(torch.nn.Module):
 
 
 
-class myTransformer(torch.nn.Module):
+class SimpleTransformer(torch.nn.Module):
     def __init__(self, config):
         super().__init__()
         self.num_layer = config.num_global_self_layer
