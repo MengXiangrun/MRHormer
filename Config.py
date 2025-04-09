@@ -26,6 +26,7 @@ class Config():
         self.num_node = None
         self.is_residual_connection = False
         self.metapath_dict=None
+        self.is_selfloop=True
 
     def save_to_excel(self, file_path):
         data = {key: [value] for key, value in vars(self).items()}
