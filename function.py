@@ -114,7 +114,7 @@ def performance(predict_dict, label_dict, BCELoss):
     # k = 500
     # hr, ndcg = NDCG(predict=predict, label=label, k=k)
 
-    return loss, aucroc, auprc, 0, 0, 0, f1, 0, 0, 0
+    return loss, aucroc, auprc, f1
 
 
 def train(model, optimizer, BCELoss, device, dataset_name,
@@ -164,12 +164,9 @@ def train(model, optimizer, BCELoss, device, dataset_name,
     # decode
     pred_dict = model.decoder.forward(node_emb_dict=node_emb_dict, edge_index_dict=pos_neg_edges_dict)
 
-    loss, aucroc, auprc, accuracy, recall, precision, f1, k, hr, ndcg = performance(
-        label_dict=pos_neg_label_dict,
-        predict_dict=pred_dict,
-        BCELoss=BCELoss)
+    loss, aucroc, auprc, f1 = performance(label_dict=pos_neg_label_dict, predict_dict=pred_dict, BCELoss=BCELoss)
 
-    return model, optimizer, loss, aucroc, auprc, accuracy, recall, precision, f1, k, hr, ndcg
+    return model, optimizer, loss, aucroc, auprc, f1
 
 
 def test(model, optimizer, BCELoss, device, dataset_name,
@@ -220,12 +217,9 @@ def test(model, optimizer, BCELoss, device, dataset_name,
         # decode
         pred_dict = model.decoder.forward(node_emb_dict=node_emb_dict, edge_index_dict=pos_neg_edges_dict)
 
-        loss, aucroc, auprc, accuracy, recall, precision, f1, k, hr, ndcg = performance(
-            label_dict=pos_neg_label_dict,
-            predict_dict=pred_dict,
-            BCELoss=BCELoss)
+        loss, aucroc, auprc, f1 = performance(label_dict=pos_neg_label_dict, predict_dict=pred_dict, BCELoss=BCELoss)
 
-    return model, optimizer, loss, aucroc, auprc, accuracy, recall, precision, f1, k, hr, ndcg
+    return model, optimizer, loss, aucroc, auprc, f1
 
 
 class EarlyStopping():
