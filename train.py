@@ -4,6 +4,7 @@ import pandas as pd
 import torch
 from space4hgnn.generate_yaml import patience
 
+from Graph2Feat import node_emb_dict
 from data import TCMDataset, HeterogeneousGraphData
 from function import train, test, EarlyStopping, save_excel, set_seed
 from EdgeDecoder import EdgeDecoder
@@ -11,6 +12,7 @@ import datetime
 from Config import Config
 from MRHormer import MRHormer
 from time import perf_counter
+
 
 class Model(torch.nn.Module):
     def __init__(self, Encoder, Decoder):
@@ -24,12 +26,14 @@ device = torch.device("cuda:0")
 set_seed()
 worktype = ''  # HyPara,Ablation
 # 'HeNetRW', 'TCMSP', 'HIT'
-for dataset_name in  ['HeNetRW', 'HIT', 'TCMSP']:
+
+for dataset_name in  ['TCMSP']:
     # data
     dataset = TCMDataset(dataset=dataset_name)
     config = Config()
     config.dataset_name = dataset_name
     torch.cuda.empty_cache()
+
 
     if dataset_name in ['HeNetRW', 'HIT']:
         config.num_local_layer = 1  # best 1
@@ -46,6 +50,8 @@ for dataset_name in  ['HeNetRW', 'HIT', 'TCMSP']:
 
     result_list = []
     for train_val_test in dataset.data_list:
+        torch.cuda.empty_cache()
+
         train_data, val_data, test_data = train_val_test
         config.node_type_list = list(test_data.node_feature_dict.keys())
         config.edge_type_list = list(test_data.message_edge_dict.keys())
@@ -57,10 +63,10 @@ for dataset_name in  ['HeNetRW', 'HIT', 'TCMSP']:
         optimizer = torch.optim.Adam(params=model.parameters(),
                                      lr=config.optimizer_learning_rate,
                                      weight_decay=config.optimizer_weight_decay)
-        train_data.to(device)
-        val_data.to(device)
+
         stop = EarlyStopping(patience=patience, threshold=0.0005)
         with torch.no_grad():  # Initialize lazy modules.
+            train_data.to(device)
             out = model.encoder.forward(train_data.node_feature_dict, train_data.message_edge_dict)
             del out
 
@@ -77,6 +83,7 @@ for dataset_name in  ['HeNetRW', 'HIT', 'TCMSP']:
             model.train()
             optimizer.zero_grad()
 
+            train_data.to(device)
             model, optimizer, loss, aucroc, auprc, accuracy, recall, precision, f1, k, hr, ndcg = train(
                 model=model,
                 optimizer=optimizer,
@@ -87,6 +94,8 @@ for dataset_name in  ['HeNetRW', 'HIT', 'TCMSP']:
                 message_edge_dict=train_data.message_edge_dict,
                 positive_predict_edge_dict=train_data.predict_edge_dict,
                 unseen_node_type=train_data.unseen_node_type)
+            train_data.to(device=torch.device('cpu'))
+            torch.cuda.empty_cache()
 
             print(f'epoch {epoch} train loss {loss.item():.4f} aucroc {aucroc:.4f} auprc {auprc:.4f} '
                   f'accuracy {accuracy:.4f} recall {recall:.4f} precision {precision:.4f} f1 {f1:.4f} '
@@ -96,6 +105,7 @@ for dataset_name in  ['HeNetRW', 'HIT', 'TCMSP']:
             optimizer.step()
 
             # val
+            val_data.to(device)
             model, optimizer, loss, aucroc, auprc, accuracy, recall, precision, f1, k, hr, ndcg = test(
                 model=model,
                 optimizer=optimizer,
@@ -110,6 +120,8 @@ for dataset_name in  ['HeNetRW', 'HIT', 'TCMSP']:
             print(f'epoch {epoch} val   loss {loss.item():.4f} aucroc {aucroc:.4f} auprc {auprc:.4f} '
                   f'accuracy {accuracy:.4f} recall {recall:.4f} precision {precision:.4f} f1 {f1:.4f} '
                   f'hr@{k} {hr:.4f} ndcg@{k} {ndcg:.4f}')
+            torch.cuda.empty_cache()
+            val_data.to(device=torch.device('cpu'))
 
             epoch_now_time = perf_counter()
             epoch_use_time = epoch_now_time - epoch_start_time
@@ -127,12 +139,13 @@ for dataset_name in  ['HeNetRW', 'HIT', 'TCMSP']:
                 print(f'{epoch} use time {use_time}')
                 config.use_time_dict[epoch]=use_time
 
-
             if epoch == 100:
                 now_time = perf_counter()
                 use_time = now_time - start_time
                 print(f'{epoch} use time {use_time}')
                 config.use_time_dict[epoch]=use_time
+
+            if epoch>101:break
 
             # early_stopping
             if 'HeNetRW' in dataset_name:
@@ -145,6 +158,7 @@ for dataset_name in  ['HeNetRW', 'HIT', 'TCMSP']:
         # save model
         stop.save(dataset_name=dataset_name, unseen_node_type=test_data.unseen_node_type, model=model)
         config.average_use_time_per_epoch = sum(epoch_use_time_list) / len(epoch_use_time_list)
+        break
 
         # test
         test_data.to(device)
@@ -191,3 +205,7 @@ for dataset_name in  ['HeNetRW', 'HIT', 'TCMSP']:
     config.save_to_excel(file_path=save_excel_path)
 
     print('Done')
+
+    model.encoder.MRGA.visualization(x_dict=node_emb_dict,
+                                     index2node_dict=test_data.index2node_dict,
+                                     dataset_name=dataset_name, data_type='test')
