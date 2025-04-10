@@ -228,40 +228,6 @@ def test(model, optimizer, BCELoss, device, dataset_name,
     return model, optimizer, loss, aucroc, auprc, accuracy, recall, precision, f1, k, hr, ndcg
 
 
-class EarlyStopping0():
-    def __init__(self, patience, threshold):
-        self.val_loss_list = list()
-        self.best_model_parameter = 0
-        self.patience = patience
-        self.threshold = threshold
-        self.count = 0
-        self.stop = False
-
-    def save(self, model, val_loss):
-        self.val_loss_list.append(val_loss.item())
-        min_val_loss = min(self.val_loss_list)
-        min_val_loss_epoch = self.val_loss_list.index(min_val_loss)
-        now_val_loss = self.val_loss_list[-1]
-        now_val_loss_epoch = self.val_loss_list.index(now_val_loss)
-
-        if now_val_loss <= min_val_loss:
-            self.best_model_parameter = model.state_dict()
-
-        if (now_val_loss_epoch - min_val_loss_epoch) >= self.patience:
-            self.stop = True
-
-        if len(self.val_loss_list) > 2:
-            now_val_loss = self.val_loss_list[-1]
-            pre_val_loss = self.val_loss_list[-2]
-            difference = pre_val_loss - now_val_loss
-            difference = abs(difference)
-            if difference < self.threshold:
-                self.count += 1
-                print(self.count)
-            if self.count >= self.patience:
-                self.stop = True
-
-
 class EarlyStopping():
     def __init__(self, patience, threshold):
         self.val_loss_list = list()
