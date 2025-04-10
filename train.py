@@ -2,13 +2,9 @@ import random
 import numpy as np
 import pandas as pd
 import torch
-from space4hgnn.generate_yaml import patience
-
-from Graph2Feat import node_emb_dict
 from data import TCMDataset, HeterogeneousGraphData
 from function import train, test, EarlyStopping, save_excel, set_seed
 from EdgeDecoder import EdgeDecoder
-import datetime
 from Config import Config
 from MRHormer import MRHormer
 from time import perf_counter
@@ -26,14 +22,12 @@ device = torch.device("cuda:0")
 set_seed()
 worktype = ''  # HyPara,Ablation
 # 'HeNetRW', 'TCMSP', 'HIT'
-
 for dataset_name in  ['TCMSP']:
     # data
     dataset = TCMDataset(dataset=dataset_name)
     config = Config()
     config.dataset_name = dataset_name
     torch.cuda.empty_cache()
-
 
     if dataset_name in ['HeNetRW', 'HIT']:
         config.num_local_layer = 1  # best 1
@@ -84,7 +78,7 @@ for dataset_name in  ['TCMSP']:
             optimizer.zero_grad()
 
             train_data.to(device)
-            model, optimizer, loss, aucroc, auprc, accuracy, recall, precision, f1, k, hr, ndcg = train(
+            model, optimizer, loss, aucroc, auprc, f1 = train(
                 model=model,
                 optimizer=optimizer,
                 BCELoss=BCELoss,
@@ -97,16 +91,14 @@ for dataset_name in  ['TCMSP']:
             train_data.to(device=torch.device('cpu'))
             torch.cuda.empty_cache()
 
-            print(f'epoch {epoch} train loss {loss.item():.4f} aucroc {aucroc:.4f} auprc {auprc:.4f} '
-                  f'accuracy {accuracy:.4f} recall {recall:.4f} precision {precision:.4f} f1 {f1:.4f} '
-                  f'hr@{k} {hr:.4f} ndcg@{k} {ndcg:.4f}')
+            print(f'epoch {epoch} train loss {loss.item():.4f} aucroc {aucroc:.4f} auprc {auprc:.4f} f1 {f1:.4f}')
 
             loss.backward()
             optimizer.step()
 
             # val
             val_data.to(device)
-            model, optimizer, loss, aucroc, auprc, accuracy, recall, precision, f1, k, hr, ndcg = test(
+            model, optimizer, loss, aucroc, auprc, f1 = test(
                 model=model,
                 optimizer=optimizer,
                 BCELoss=BCELoss,
@@ -117,9 +109,7 @@ for dataset_name in  ['TCMSP']:
                 positive_predict_edge_dict=val_data.predict_edge_dict,
                 unseen_node_type=val_data.unseen_node_type)
 
-            print(f'epoch {epoch} val   loss {loss.item():.4f} aucroc {aucroc:.4f} auprc {auprc:.4f} '
-                  f'accuracy {accuracy:.4f} recall {recall:.4f} precision {precision:.4f} f1 {f1:.4f} '
-                  f'hr@{k} {hr:.4f} ndcg@{k} {ndcg:.4f}')
+            print(f'epoch {epoch} val   loss {loss.item():.4f} aucroc {aucroc:.4f} auprc {auprc:.4f} f1 {f1:.4f}')
             torch.cuda.empty_cache()
             val_data.to(device=torch.device('cpu'))
 
@@ -145,15 +135,8 @@ for dataset_name in  ['TCMSP']:
                 print(f'{epoch} use time {use_time}')
                 config.use_time_dict[epoch]=use_time
 
-            if epoch>101:break
-
             # early_stopping
-            if 'HeNetRW' in dataset_name:
-                stop.record(model=model, now_val_loss=-aucroc)
-            if 'HIT' in dataset_name:
-                stop.record(model=model, now_val_loss=-aucroc)
-            if 'TCMSP' in dataset_name:
-                stop.record(model=model, now_val_loss=-aucroc)
+            stop.record(model=model, now_val_loss=-aucroc)
 
         # save model
         stop.save(dataset_name=dataset_name, unseen_node_type=test_data.unseen_node_type, model=model)
@@ -165,7 +148,7 @@ for dataset_name in  ['TCMSP']:
         print('unseen node type:', test_data.unseen_node_type)
         # model.load_state_dict(stop.best_model_parameter)
         model = stop.load(model=model)
-        model, optimizer, loss, aucroc, auprc, accuracy, recall, precision, f1, k, hr, ndcg = test(
+        model, optimizer, loss, aucroc, auprc, f1 = test(
             model=model,
             optimizer=optimizer,
             BCELoss=BCELoss,
@@ -176,16 +159,14 @@ for dataset_name in  ['TCMSP']:
             positive_predict_edge_dict=test_data.predict_edge_dict,
             unseen_node_type=test_data.unseen_node_type)
 
-        print(f'test loss {loss.item():.4f} aucroc {aucroc:.4f} auprc {auprc:.4f} '
-              f'accuracy {accuracy:.4f} recall {recall:.4f} precision {precision:.4f} f1 {f1:.4f} '
-              f'hr@{k} {hr:.4f} ndcg@{k} {ndcg:.4f}')
+        print(f'test loss {loss.item():.4f} aucroc {aucroc:.4f} auprc {auprc:.4f} f1 {f1:.4f}')
         print('Done')
         print()
 
-        result = [loss.item(), aucroc, auprc, accuracy, recall, precision, f1, hr, ndcg]
+        result = [loss.item(), aucroc, auprc, f1]
         result_list.append(result)
 
-    header = ['loss', 'aucroc', 'auprc', 'accuracy', 'recall', 'precision', 'f1', f'hr@{k}', f'ndcg@{k}']
+    header = ['loss', 'aucroc', 'auprc', 'f1']
     result_dataframe = pd.DataFrame(result_list, columns=header)
     mean_result_dataframe = result_dataframe.mean(axis=0).to_frame().T
     mean_result_dataframe.index = ['mean']  # 设置索引为 'mean'
@@ -195,6 +176,7 @@ for dataset_name in  ['TCMSP']:
     now_time = now.strftime("%Y_%m_%d_%H_%M_%S")
     save_excel_path = f'./{dataset_name}_{worktype}/{type(model.encoder).__name__}.xlsx'
     print(save_excel_path)
+
     save_excel(df=result_dataframe, file_path=save_excel_path, is_index=True)
 
     pd.set_option('display.max_rows', None)
@@ -206,6 +188,3 @@ for dataset_name in  ['TCMSP']:
 
     print('Done')
 
-    model.encoder.MRGA.visualization(x_dict=node_emb_dict,
-                                     index2node_dict=test_data.index2node_dict,
-                                     dataset_name=dataset_name, data_type='test')
