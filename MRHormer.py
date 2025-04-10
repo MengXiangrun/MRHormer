@@ -102,33 +102,6 @@ class TopologyRobustLocalAttention(torch.nn.Module):
         offset_node_emb, node_range_dict, offset_edge_index, edge_range_dict = self.to_homogeneous(
             node_emb_dict=node_emb_dict, edge_index_dict=edge_index_dict)
 
-        # # message and aggregate
-        # attention_list = list()
-        # message_list = list()
-        # for edge_type, edge_index in edge_index_dict.items():
-        #     source_type = edge_type[0]
-        #     target_type = edge_type[-1]
-        #
-        #     source_index = edge_index[0]
-        #     target_index = edge_index[1]
-        #
-        #     source_emb = node_emb_dict[source_type]
-        #     target_emb = node_emb_dict[target_type]
-        #
-        #     k_emb = self.k_linear[str(edge_type)](source_emb)[source_index]
-        #     q_emb = self.q_linear[str(edge_type)](target_emb)[target_index]
-        #
-        #     attention = torch.cat(tensors=[k_emb, q_emb], dim=1)
-        #     attention = self.a_linear[str(edge_type)](attention)
-        #     attention = attention.view(-1, self.num_head, self.head_dim)
-        #     attention = attention * self.head_weight[str(edge_type)]
-        #     attention_list.append(attention)
-        #
-        #     v_emb = self.v_linear[str(edge_type)](source_emb)[source_index]
-        #     v_emb = v_emb.view(-1, self.num_head, self.head_dim)
-        #     message_list.append(v_emb)
-
-        # message and aggregate
         attention_dict = dict()
         message_dict = dict()
         for edge_type, edge_index in edge_index_dict.items():
@@ -391,7 +364,6 @@ class MultiRelationGlobalAttention(torch.nn.Module):
                 target_emb, attention = self.global_attention[target_type](source_emb, target_emb)
             else:
                 target_emb = self.global_attention[target_type](source_emb, target_emb)
-            # target_emb = self.global_attention[target_type](key=source_emb, query=target_emb, value=source_emb)[0]
 
             node_emb_dict[target_type] = target_emb
 
@@ -399,6 +371,58 @@ class MultiRelationGlobalAttention(torch.nn.Module):
             node_emb_dict[node_type] = self.out_linear[node_type](node_emb)
 
         return node_emb_dict
+
+    def visualization(self, x_dict, index2node_dict, dataset_name, data_type, predict_edge_dict):
+        h_dict = x_dict.copy()
+        for node_type, h in h_dict.items():
+            h_dict[node_type] = self.in_linear[node_type](h)
+
+        # According to relation
+        # In the meta-relation source nodes and target nodes are doing transformer interaction
+        attention_dict = dict()
+        node_emb_dict = dict()
+        for target_type, source_type_list in self.target_source_dict.items():
+            source_emb_list = []
+
+            for source_type in source_type_list:
+                source_emb = h_dict[source_type]
+                source_emb_list.append(source_emb)
+
+            source_emb = torch.cat(source_emb_list, dim=0)
+            target_emb = h_dict[target_type]
+            if self.config.dataset_name in ['HeNetRW', 'TCMSP']:
+                target_emb, attention = self.global_attention[target_type](source_emb, target_emb)
+            else:
+                target_emb = self.global_attention[target_type](source_emb, target_emb)
+            node_emb_dict[target_type] = target_emb
+
+            source_node_name = []
+            target_node_name = []
+            for source_type in source_type_list:
+                source_node_name += list(index2node_dict[source_type].values())
+            target_node_name += list(index2node_dict[target_type].values())
+
+            attention = pd.DataFrame(attention.detach().numpy(), index=target_node_name, columns=source_node_name)
+
+            target_type_node_index = []
+            for edge_type, predict_edge in predict_edge_dict.items():
+                if target_type == edge_type[0]:
+                    target_type_node_index += predict_edge[0].detach().cpu().numpy().tolist()
+                if target_type == edge_type[1]:
+                    target_type_node_index += predict_edge[1].detach().cpu().numpy().tolist()
+            target_type_node_index = np.unique(target_type_node_index)
+
+            attention = attention.iloc[target_type_node_index]
+
+            filename = f'{dataset_name}_{data_type}_{target_type}_gloabal_att.xlsx'
+            attention.to_excel(filename, index=True)
+
+            attention_dict[target_type] = attention
+
+        for node_type, node_emb in node_emb_dict.items():
+            node_emb_dict[node_type] = self.out_linear[node_type](node_emb)
+
+        return node_emb_dict, attention_dict
 
 
 class MRHormer(torch.nn.Module):
